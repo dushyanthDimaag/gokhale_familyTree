@@ -1,0 +1,3022 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Vertical Family Tree Mind Map</title>
+  <!-- D3.js v7 for hierarchical layout and transitions -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #0b1120; /* Deep Slate Base */
+      color: #f8fafc;
+      position: relative;
+    }
+
+    /* Transparent Background Photo Overlay */
+    .bg-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background-image: url('background.jpeg');
+      background-size: cover;
+      background-position: center center;
+      background-repeat: no-repeat;
+      opacity: 0.12;
+      filter: blur(1.5px);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Soft vignette gradient on top of background image */
+    .bg-gradient-mask {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: radial-gradient(circle at center, transparent 30%, #0b1120 90%);
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* SVG Canvas */
+    #tree-svg {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      display: block;
+      cursor: grab;
+      touch-action: none;
+      z-index: 2;
+    }
+    #tree-svg:active { cursor: grabbing; }
+
+    /* Top-Right Navigation Controls (Search + Back + Home) */
+    .top-controls {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      z-index: 25;
+    }
+
+    .btn-nav {
+      background: rgba(30, 41, 59, 0.85);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      color: #38bdf8;
+      border: 1px solid rgba(51, 65, 85, 0.8);
+      padding: 10px 16px;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+    .btn-nav:active {
+      transform: scale(0.95);
+      background: #334155;
+    }
+
+    /* Search Container Styling */
+    .search-box-container {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      background: rgba(30, 41, 59, 0.9);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(51, 65, 85, 0.85);
+      padding: 6px 10px;
+      border-radius: 14px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+      width: 230px;
+      transition: width 0.2s ease, border-color 0.2s ease;
+    }
+    .search-box-container:focus-within {
+      border-color: #38bdf8;
+      width: 260px;
+    }
+    .search-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .search-row input {
+      width: 100%;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: #f8fafc;
+      font-size: 13px;
+      padding: 2px 0;
+    }
+    .search-row input::placeholder {
+      color: #64748b;
+      font-size: 12px;
+    }
+    .search-row.father-row {
+      border-top: 1px solid rgba(51, 65, 85, 0.6);
+      padding-top: 4px;
+      margin-top: 2px;
+    }
+    .search-btn-icon {
+      background: #0284c7;
+      border: none;
+      color: white;
+      border-radius: 8px;
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s ease;
+      white-space: nowrap;
+    }
+    .search-btn-icon:hover { background: #0369a1; }
+
+    /* Search Results / Suggestions Dropdown */
+    .search-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      margin-top: 6px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      max-height: 250px;
+      overflow-y: auto;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
+      display: none;
+      z-index: 30;
+    }
+    .search-dropdown.open { display: block; }
+    .search-item {
+      padding: 8px 12px;
+      cursor: pointer;
+      border-bottom: 1px solid rgba(51, 65, 85, 0.4);
+      transition: background 0.15s ease;
+    }
+    .search-item:last-child { border-bottom: none; }
+    .search-item:hover { background: #334155; }
+    .search-item-name {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: #38bdf8;
+    }
+    .search-item-meta {
+      font-size: 11px;
+      color: #94a3b8;
+      margin-top: 2px;
+    }
+
+    /* Left Drawer Toggle */
+    .btn-drawer-open {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      z-index: 20;
+      background: rgba(30, 41, 59, 0.85);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      color: #f8fafc;
+      border: 1px solid rgba(51, 65, 85, 0.8);
+      padding: 10px 16px;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 600;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+      cursor: pointer;
+    }
+
+    /* Left Sliding Drawer Panel */
+    .drawer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: 380px;
+      max-width: 90vw;
+      background: #1e293b;
+      border-right: 1px solid #334155;
+      transform: translateX(-100%);
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 35;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 8px 0 24px rgba(0, 0, 0, 0.7);
+    }
+    .drawer.open { transform: translateX(0); }
+
+    .drawer-header {
+      padding: 16px 18px;
+      border-bottom: 1px solid #334155;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .drawer-header h2 {
+      font-size: 16px;
+      color: #f1f5f9;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .btn-close {
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      font-size: 20px;
+      cursor: pointer;
+      padding: 4px 8px;
+    }
+
+    /* 4-Tab Header Bar */
+    .tabs-bar {
+      display: flex;
+      border-bottom: 1px solid #334155;
+      background: #0f172a;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 12px 2px;
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+    .tab-btn.active {
+      color: #38bdf8;
+      border-bottom: 2px solid #38bdf8;
+      background: #1e293b;
+    }
+
+    /* Tab Content Areas */
+    .tab-body {
+      flex: 1;
+      padding: 18px;
+      overflow-y: auto;
+      display: none;
+    }
+    .tab-body.active { display: block; }
+
+    /* Read-Only Field Typography */
+    .field-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 14px;
+    }
+    .field-value {
+      font-size: 14px;
+      color: #f8fafc;
+      margin-top: 4px;
+      line-height: 1.5;
+    }
+
+    /* Static History Section Card */
+    .history-card {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 14px;
+    }
+    .history-card h3 {
+      font-size: 14px;
+      color: #38bdf8;
+      margin-bottom: 6px;
+    }
+    .history-card p {
+      font-size: 13px;
+      color: #cbd5e1;
+      line-height: 1.6;
+    }
+
+    /* D3 Mind Map SVG Elements */
+    .link {
+      fill: none;
+      stroke: #334155;
+      stroke-width: 2.5px;
+      transition: stroke 0.3s ease;
+    }
+    .node { cursor: pointer; }
+    .node circle {
+      stroke-width: 3px;
+      transition: all 0.3s ease;
+    }
+    .node text.node-name {
+      font-size: 12.5px;
+      font-weight: 600;
+      user-select: none;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95), 0 0 8px rgba(11, 17, 32, 0.8);
+    }
+    .node text.node-name tspan { text-anchor: middle; }
+    .node text.node-name tspan.sub-relation {
+      font-size: 11px;
+      font-weight: 400;
+      fill: #cbd5e1;
+    }
+    .gen-badge {
+      font-size: 11px;
+      font-weight: 500;
+      fill: #94a3b8;
+      text-shadow: 0 1px 4px rgba(0, 0, 0, 0.95);
+    }
+
+    /* Photo Grid Styles (Uncropped contain + letterboxing) */
+    .photo-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-top: 10px;
+    }
+    .photo-card {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .photo-card img {
+      width: 100%;
+      height: 140px;
+      object-fit: contain;        /* Prevents cropping */
+      background: #020617;        /* Clean dark letterboxing */
+      display: block;
+      cursor: pointer;
+      transition: transform 0.2s ease;
+    }
+    .photo-card img:hover {
+      transform: scale(1.02);
+    }
+    .photo-card .photo-caption {
+      padding: 6px 8px;
+      font-size: 11px;
+      color: #94a3b8;
+      line-height: 1.3;
+      text-align: center;
+      background: #0f172a;
+    }
+
+    /* =======================================================
+       FULL-SCREEN IMAGE LIGHTBOX WITH ZOOM & "X" ON PHOTO
+       ======================================================= */
+    .lightbox-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(5, 10, 20, 0.94);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      touch-action: none;
+    }
+    .lightbox-modal.open {
+      display: flex;
+    }
+
+    /* Container for the photo and its on-photo X button */
+    .lightbox-wrapper {
+      position: relative;
+      max-width: 92vw;
+      max-height: 86vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      border-radius: 12px;
+      background: #020617;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.9), 0 0 0 1px #334155;
+    }
+
+    .lightbox-wrapper img {
+      max-width: 90vw;
+      max-height: 82vh;
+      object-fit: contain;
+      display: block;
+      cursor: zoom-in;
+      transition: transform 0.3s cubic-bezier(0.2, 0, 0.2, 1);
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+
+    /* When zoomed state is active */
+    .lightbox-wrapper img.zoomed {
+      transform: scale(2.2);
+      cursor: zoom-out;
+    }
+
+    /* Prominent "X" button placed directly on the top-right corner of the photo */
+    .lightbox-photo-close {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      border: 1.5px solid #38bdf8;
+      color: #f8fafc;
+      font-size: 18px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.7);
+      z-index: 10;
+      transition: all 0.2s ease;
+    }
+    .lightbox-photo-close:active {
+      transform: scale(0.9);
+      background: #0284c7;
+    }
+
+    /* Floating zoom control pill below the photo */
+    .lightbox-controls {
+      position: absolute;
+      bottom: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(30, 41, 59, 0.9);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(51, 65, 85, 0.9);
+      border-radius: 24px;
+      display: flex;
+      gap: 12px;
+      padding: 6px 16px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+      z-index: 10;
+    }
+    .lightbox-control-btn {
+      background: transparent;
+      border: none;
+      color: #f8fafc;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 4px 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: color 0.15s ease;
+    }
+    .lightbox-control-btn:hover { color: #38bdf8; }
+    .lightbox-control-btn:active { transform: scale(0.92); }
+  </style>
+</head>
+<body>
+
+  <!-- Background Family Photo & Gradient Mask -->
+  <div class="bg-overlay"></div>
+  <div class="bg-gradient-mask"></div>
+
+  <!-- Top-Left Drawer Toggle -->
+  <button class="btn-drawer-open" onclick="openDrawer()">☰ Family Info</button>
+
+  <!-- Top-Right Navigation Controls (Search Bar + Back + Home) -->
+  <div class="top-controls">
+    <!-- Search Bar Container -->
+    <div class="search-box-container" id="searchBoxContainer">
+      <div class="search-row">
+        <span style="font-size: 12px; color: #38bdf8;">🔍</span>
+        <input type="text" id="searchInput" placeholder="Member name..." autocomplete="off" />
+        <button class="search-btn-icon" id="searchSubmitBtn">Find</button>
+      </div>
+      <div class="search-row father-row">
+        <span style="font-size: 10px; color: #94a3b8;">👨‍👦</span>
+        <input type="text" id="fatherInput" placeholder="Father's name (optional)..." autocomplete="off" />
+      </div>
+
+      <!-- Autocomplete Dropdown List -->
+      <div class="search-dropdown" id="searchDropdown"></div>
+    </div>
+
+    <!-- Back Button -->
+    <button class="btn-nav" id="btnBack">⬅ Back</button>
+
+    <!-- Home Button -->
+    <button class="btn-nav" id="btnHome">⌂ Home</button>
+  </div>
+
+  <!-- Left Sidebar with 4 Tabs -->
+  <div class="drawer" id="sideDrawer">
+    <div class="drawer-header">
+      <h2 id="drawerTitle">The Gokhales of Shishila</h2>
+      <button class="btn-close" onclick="closeDrawer()">✕</button>
+    </div>
+    
+    <div class="tabs-bar">
+      <button class="tab-btn active" onclick="showTab('tabHistory')">Message</button>
+      <button class="tab-btn" onclick="showTab('tabMemberInfo')">Member Info</button>
+      <button class="tab-btn" onclick="showTab('tabMemberPhotos')">Member Photos</button>
+      <button class="tab-btn" onclick="showTab('tabArchive')">Archive</button>
+    </div>
+
+    <!-- TAB 1: Common Family History -->
+    <div id="tabHistory" class="tab-body active">
+      <div class="history-card" style="line-height: 1.7; font-size: 13.5px; color: #cbd5e1;">
+        <h3 style="color: #38bdf8; margin-bottom: 12px; font-size: 15px;">A Message to the Family</h3>
+
+        <p style="margin-bottom: 14px;">
+          While historical records leave the exact origins and migration of the Chitpavan community to Dakshina Kannada shrouded in time, much of our own ancestry has also remained unwritten, passed down primarily through memory rather than documented lineage. Born out of deep curiosity and a heartfelt desire to rediscover our roots, this family tree is an endeavor to trace the generations that came before us. Over the years, changing circumstances led the joint family to branch into nuclear homes, scattering our kin across different regions. This record stands as a humble effort to bridge those distances and reunite the widely dispersed families of the Shishila Gokhales under one shared legacy.
+        </p>
+
+        <p style="margin-bottom: 18px;">
+          To make this historical tapestry truly complete, an initiative is also underway to compile photographs of our family members into a commemorative album, and your support in sharing these memories would be invaluable. As with any effort to piece together the past, there may be omissions or inaccuracies; I warmly welcome your insights, corrections, and additions to help enrich this collective chronicle.
+        </p>
+
+        <p style="margin-top: 16px; color: #94a3b8; font-style: italic;">
+          With warm regards and gratitude,<br><br>
+          <span style="color: #cbd5e1; font-style: normal; font-weight: 500;">
+            Your own family member,<br>
+            <strong style="color: #38bdf8; font-weight: 600;">Manohara M. Gokhale</strong>
+          </span>
+        </p>
+      </div>
+    </div>
+
+    <!-- TAB 2: Member Info (Dynamic) -->
+    <div id="tabMemberInfo" class="tab-body">
+      <div class="field-label">Selected Member</div>
+      <div id="infoMemberName" class="field-value" style="font-size: 16px; font-weight: 700; color: #38bdf8;">-</div>
+
+      <div class="field-label">Generation</div>
+      <div id="infoGen" class="field-value" style="color: #38bdf8; font-weight: bold;">-</div>
+      
+      <div class="field-label">Lifespan / Dates</div>
+      <div id="infoYears" class="field-value">-</div>
+
+      <div class="field-label">Biography & Life Story</div>
+      <div id="infoHistory" class="field-value" style="color: #cbd5e1;">
+        Tap on any node in the mind map to view details.
+      </div>
+    </div>
+
+    <!-- TAB 3: Member Photos -->
+    <div id="tabMemberPhotos" class="tab-body">
+      <div class="photo-grid" id="memberPhotoList"></div>
+      <p id="noMemberPhotosMsg" style="color: #64748b; font-size: 13px; margin-top: 14px; display: none;">
+        No personal photos recorded for this member.
+      </p>
+    </div>
+
+    <!-- TAB 4: Archive -->
+    <div id="tabArchive" class="tab-body">
+      <p style="color: #94a3b8; font-size: 12px; margin-bottom: 10px;">
+        General historical documents, ancestral houses, and family gatherings:
+      </p>
+      <div class="photo-grid" id="archivePhotoList"></div>
+    </div>
+  </div>
+
+  <!-- SVG Drawing Canvas -->
+  <svg id="tree-svg"></svg>
+
+  <!-- Full-Screen Lightbox Modal with Zoom & On-Photo 'X' -->
+  <div class="lightbox-modal" id="lightboxModal" onclick="closeLightbox()">
+    <div class="lightbox-wrapper" onclick="event.stopPropagation()">
+      <!-- 'X' button directly on the photo -->
+      <button class="lightbox-photo-close" onclick="closeLightbox()" title="Close photo (✕)">✕</button>
+      
+      <!-- Photo (Clicking toggles Zoom In / Zoom Out) -->
+      <img id="lightboxImg" src="" alt="Enlarged photo preview" onclick="togglePhotoZoom()" title="Click to zoom in / zoom out" />
+    </div>
+
+    <!-- Zoom Control Bar -->
+    <div class="lightbox-controls" onclick="event.stopPropagation()">
+      <button class="lightbox-control-btn" onclick="zoomInPhoto()" title="Zoom In">🔍 +</button>
+      <button class="lightbox-control-btn" onclick="zoomOutPhoto()" title="Zoom Out">🔍 −</button>
+      <button class="lightbox-control-btn" onclick="resetPhotoZoom()" title="Reset Size">↺ Reset</button>
+      <button class="lightbox-control-btn" onclick="closeLightbox()" style="color: #ef4444; font-weight: bold;" title="Close">✕</button>
+    </div>
+  </div>
+
+  <script>
+    /* =======================================================
+       1. STATIC FAMILY DATA & GENERAL ARCHIVE
+       ======================================================= */
+    const familyArchivePhotos = [
+      {
+        url: "background.jpeg",
+        caption: "Annual Reunion 1972"
+      },
+      {
+        url: "https://images.unsplash.com/photo-1544717305-2782549b5136?q=80&w=400&auto=format&fit=crop",
+        caption: "Ancestral Homestead"
+      },
+      {
+        url: "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?q=80&w=400&auto=format&fit=crop",
+        caption: "Family Gathering 1995"
+      },
+      {
+        url: "https://images.unsplash.com/photo-1473496169904-658ba7c44d8a?q=80&w=400&auto=format&fit=crop",
+        caption: "Summer Vacation 2008"
+      }
+    ];
+
+    const familyData = {
+      id: "gen1_1",
+      name: "Narayana",
+      generation: 1,
+      years: "",
+      info: { history: "Patriarch of the lineage.", photos: [] },
+      children: [
+        {
+          id: "gen2_1",
+          name: "Venkatesha",
+          generation: 2,
+          years: "",
+          info: { history: "", photos: [] },
+          children: [
+            {
+              id: "gen3_1",
+              name: "Padmanabha-Ganga (D/o Mundaje Padmanabha Bhide)",
+              generation: 3,
+              years: "",
+              info: { history: "", photos: [] },
+              children: [
+                {
+                  id: "gen4_12",
+                  name: "Ganapathi-Rukmini (D/o Bhandihole ---)",
+                  generation: 4,
+                  years: "",
+                  info: { history: "", photos: [] },
+                  children: [
+                    {
+                      id: "gen5_1",
+                      name: "Damodara",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    },
+                    {
+                      id: "gen5_2",
+                      name: "Sadashiva-Girija",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: [
+                        {
+                          id: "gen6_63",
+                          name: "Gopalkrishna-Rohini (D/o Malehitlu Nagabhushana Marathe)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: [
+                            {
+                              id: "gen7_38",
+                              name: "Chittaranjan",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            },
+                            {
+                              id: "gen7_39",
+                              name: "Yashwanth",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            }
+                          ]
+                        },
+                        {
+                          id: "gen6_64",
+                          name: "Ratnakara-Nayana (D/o Badiyadka Subraya Bhide)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: [
+                            {
+                              id: "gen7_40",
+                              name: "Nikhila",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            }
+                          ]
+                        },
+                        {
+                          id: "gen6_65",
+                          name: "Satish-Sumeeta",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: [
+                            {
+                              id: "gen7_41",
+                              name: "Swapnali",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            }
+                          ]
+                        },
+                        {
+                          id: "gen6_66",
+                          name: "Raghuvira",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_67",
+                          name: "Girish",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_68",
+                          name: "Sunanda (W/o Durga Narayana Chiplunkar)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_69",
+                          name: "Jaya (W/o Bengaluru Venkatesh Patwardhan)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_70",
+                          name: "Geeta (W/o Ratnagiri Shekhar Phadke)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_71",
+                          name: "Usha (W/o Soraba Shridhar Sathe)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_72",
+                          name: "Pushpalatha (W/o Maala Raghuram Phadke)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_73",
+                          name: "Jagadish-Pallavi",
+                          generation: 6,
+                          years: "",
+                          info: { history: "S/o Sadashiva and his second wife Radha", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_74",
+                          name: "Nityananda",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        }
+                      ]
+                    },
+                    {
+                      id: "gen5_3",
+                      name: "Baabi (W/o Mumbai Sane)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    },
+                    {
+                      id: "gen5_4",
+                      name: "Draupadi (W/o Maragunda Narayana Mehendale)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    },
+                    {
+                      id: "gen5_5",
+                      name: "Chandru (W/o Darbhetadka Bende Sadashiva Bhat)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    },
+                    {
+                      id: "gen5_6",
+                      name: "Shanta (W/o Bangadi Trivikrama Marathe)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    }
+                  ]
+                },
+                {
+                  id: "gen4_13",
+                  name: "Subraya-Saraswathi (D/o Bhandihole Gogate ---)",
+                  generation: 4,
+                  years: "",
+                  info: { history: "", photos: [] },
+                  children: [
+                    {
+                      id: "gen5_7",
+                      name: "Sulochana (W/o Kuduregundi Krishna Bhat Govindye)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    },
+                    {
+                      id: "gen5_8",
+                      name: "Jalajaakshi (W/o Hosmatha Vighneshwara Hebbar)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    },
+                    {
+                      id: "gen5_9",
+                      name: "Sundari (W/o Nidgal Ramachandra Marathe)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    },
+                    {
+                      id: "gen5_10",
+                      name: "Draupadi(Sonnu) (W/o Chapparamakki Ramachandra Gogate)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    },
+                    {
+                      id: "gen5_11",
+                      name: "Prema (W/o Harihara Moreshwara Bapat)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    },
+                    {
+                      id: "gen5_12",
+                      name: "Vimala (W/o Bengaluru Shivarama Khare)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    },
+                    {
+                      id: "gen5_24",
+                      name: "Vighneshwara-Indumathi (D/o Soraba Govinda Bhave)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: [
+                        {
+                          id: "gen6_5",
+                          name: "Bharathi (W/o --- Bapat)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_6",
+                          name: "Padmaja (W/o Mangaluru Vighnesha Keshava Bhide)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_7",
+                          name: "Vijayalakshmi",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_8",
+                          name: "Rajani",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        }
+                      ]
+                    },
+                    {
+                      id: "gen5_25",
+                      name: "Ramesha-Kusuma (D/o Patla Ganapathi Phadke)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: [
+                        {
+                          id: "gen6_9",
+                          name: "Sudha (W/o Hosmatha Raghunatha Hebbar)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_10",
+                          name: "Latha (W/o Harihara ---)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_11",
+                          name: "Meera (W/o Maala --- Londhe)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_12",
+                          name: "Lakshmana-Chaitra (D/o Chapparamakki Gopalakrishna Gogate)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: [
+                            {
+                              id: "gen7_18",
+                              name: "Nisha",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            },
+                            {
+                              id: "gen7_19",
+                              name: "Dattatreya",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            }
+                          ]
+                        },
+                        {
+                          id: "gen6_13",
+                          name: "Sadananda",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        }
+                      ]
+                    },
+                    {
+                      id: "gen5_26",
+                      name: "Anantha-Manisha",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: [
+                        {
+                          id: "gen6_14",
+                          name: "Harsha-Smitha",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_15",
+                          name: "Hemantha",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_16",
+                          name: "Naveena",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  id: "gen4_14",
+                  name: "Keshava",
+                  generation: 4,
+                  years: "",
+                  info: { history: "", photos: [] },
+                  children: []
+                },
+                {
+                  id: "gen4_15",
+                  name: "Kaveri (W/o Hosmatha Govinda Hebbar)",
+                  generation: 4,
+                  years: "",
+                  info: { history: "", photos: [] },
+                  children: []
+                },
+                {
+                  id: "gen4_16",
+                  name: "Gangadhara-Uma (D/o Kundaavu Anantha Chiplunkar)",
+                  generation: 4,
+                  years: "",
+                  info: { history: "", photos: [] },
+                  children: [
+                    {
+                      id: "gen5_13",
+                      name: "Radha (W/o Hebri Hiriyanna Chiplunkar)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    },
+                    {
+                      id: "gen5_14",
+                      name: "Ratna(Minnu) (W/o Durga Vasudeva Marathe)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    },
+                    {
+                      id: "gen5_15",
+                      name: "Lalita(Baali) (W/o Soolabettu Prabhakara Athavale)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    },
+                    {
+                      id: "gen5_16",
+                      name: "Subhadra (W/o Arasinamakki Subraya Bhide)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    },
+                    {
+                      id: "gen5_27",
+                      name: "Ramaanatha-Narmada (D/o Darbhetadka Mahadeva Bhide)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: [
+                        {
+                          id: "gen6_17",
+                          name: "Ganesha-Shruthi",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: [
+                            {
+                              id: "gen7_45",
+                              name: "Ganavi",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            },
+                            {
+                              id: "gen7_46",
+                              name: "Akshara",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            }
+                          ]
+                        },
+                        {
+                          id: "gen6_18",
+                          name: "Ambareesha",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_19",
+                          name: "Vandana (W/o Gangeneeru Raghunatha Karmarkar)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_20",
+                          name: "Vinaya (W/o Darbhetadka Jagadeesha Khare)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        }
+                      ]
+                    },
+                    {
+                      id: "gen5_28",
+                      name: "Krishna(Raaju)-Kripa (D/o Ujire Subrahmanya Bhat)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: [
+                        {
+                          id: "gen6_21",
+                          name: "Bharata-Arpitha",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        }
+                      ]
+                    },
+                    {
+                      id: "gen5_29",
+                      name: "Damodara-Gauri (D/o Mundaje --- Patwardhan)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: [
+                        {
+                          id: "gen6_22",
+                          name: "Umesha-Prema (D/o Maala --- Marathe)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: [
+                            {
+                              id: "gen7_20",
+                              name: "Deepa (W/o Bengaluru Shresha Shetty)",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            },
+                            {
+                              id: "gen7_21",
+                              name: "Sandeep-Vaishali (D/o Kasargod Gopalakrishna Bhat)",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            }
+                          ]
+                        },
+                        {
+                          id: "gen6_23",
+                          name: "Dinesha-Geetha",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: [
+                            {
+                              id: "gen7_22",
+                              name: "Santhosh",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            },
+                            {
+                              id: "gen7_23",
+                              name: "Sandesh",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            }
+                          ]
+                        },
+                        {
+                          id: "gen6_24",
+                          name: "Savitha (W/o Mumbai Ratnakar Sohni)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_25",
+                          name: "Sindhu (W/o Madikeri Shivadasa)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_26",
+                          name: "Sujyothi (W/o Belgaum Ramachandra Kulkarni)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_27",
+                          name: "Saroja (W/o Sangli Hanumantha Abhyankar)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_28",
+                          name: "Sahana (W/o Ravindra Kulkarni)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  id: "gen4_17",
+                  name: "Madhusudana-Lakshmi (D/o Hostota Ganesh Bhide)",
+                  generation: 4,
+                  years: "",
+                  info: { history: "", photos: [] },
+                  children: [
+                    {
+                      id: "gen5_17",
+                      name: "Sumana (W/o Koddolu Narasimha Phadke)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    },
+                    {
+                      id: "gen5_30",
+                      name: "Padmanabha-Anasuya (D/o Durga Rama Velankar)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: [
+                        {
+                          id: "gen6_29",
+                          name: "Sharath-Chaitanya (D/o Hosmatha Dinakara Hebbar)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: ["images/Sharath_Chaitanya.jpeg"] },
+                          children: [
+                            {
+                              id: "gen7_1",
+                              name: "Samhita",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            },
+                            {
+                              id: "gen7_2",
+                              name: "Eshaan",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            }
+                          ]
+                        },
+                        {
+                          id: "gen6_30",
+                          name: "Hemanth-Divya (D/o Darbhetadka Gopinatha Hebbar)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: [
+                            {
+                              id: "gen7_3",
+                              name: "Mandhata",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            },
+                            {
+                              id: "gen7_4",
+                              name: "Paridhi",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            }
+                          ]
+                        },
+                        {
+                          id: "gen6_31",
+                          name: "Chaya-Shrikanth (S/o Kaje Ananda Marathe)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: ["images/Chaya_Srikanth.jpeg"] },
+                          children: []
+                        }
+                      ]
+                    },
+                    {
+                      id: "gen5_31",
+                      name: "Vishnu-Vidya (D/o Malehitlu Janardana Marathe)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: [
+                        {
+                          id: "gen6_32",
+                          name: "Vrinda (W/o Mundaje Yogeesha Bedekar)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_33",
+                          name: "Shashank-Shriya",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: [
+                            {
+                              id: "gen7_5",
+                              name: "Aakarsh",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      id: "gen5_32",
+                      name: "Heramba-Leela (D/o Patla Ganapathi Phadke)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: [
+                        {
+                          id: "gen6_34",
+                          name: "Vikram-Rashmi",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: [
+                            {
+                              id: "gen7_6",
+                              name: "Nishchal",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            },
+                            {
+                              id: "gen7_7",
+                              name: "Ujwal",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            }
+                          ]
+                        },
+                        {
+                          id: "gen6_35",
+                          name: "Vineeth-Soumya",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        }
+                      ]
+                    },
+                    {
+                      id: "gen5_18",
+                      name: "Ramaa (W/o Hostota Narayana Gogate)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    },
+                    {
+                      id: "gen5_33",
+                      name: "Manohara-Vatsala (D/o Durga Ram Velankar)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: [
+                        {
+                          id: "gen6_36",
+                          name: "Dilip-Yogitha (D/o Hubli Kushal Joglekar)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: [
+                            {
+                              id: "gen7_8",
+                              name: "Vibhav",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: ["images/Vibhav.jpeg"] },
+                              children: []
+                            }
+                          ]
+                        },
+                        {
+                          id: "gen6_37",
+                          name: "Dushyanth-Sahana (D/o Mangaluru Narayana Patwardhan)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: [
+                            {
+                              id: "gen7_9",
+                              name: "Samudyata",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: ["images/Samudyata.jpeg"] },
+                              children: []
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      id: "gen5_34",
+                      name: "Chandrashekhara-Rekha (D/o Hadeelu Sooryanarayana Marathe)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: [
+                        {
+                          id: "gen6_38",
+                          name: "Sachin-Kaveri",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        }
+                      ]
+                    },
+                    {
+                      id: "gen5_35",
+                      name: "Gajanana-Vasuki (D/o Bengaluru Raghunatha Divekar)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: [
+                        {
+                          id: "gen6_39",
+                          name: "Rahul-Anuradha (D/o Bengaluru Ramesh Bhave)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: [
+                            {
+                              id: "gen7_10",
+                              name: "Agastya",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            },
+                            {
+                              id: "gen7_11",
+                              name: "Surya",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      id: "gen5_19",
+                      name: "Uma (W/o Ratnagiri Pawas Dhananjaya Deshmukh)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    },
+                    {
+                      id: "gen5_36",
+                      name: "Venugopala-Arundhati (D/o Harihara Vijayakumar Marathe)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: [
+                        {
+                          id: "gen6_40",
+                          name: "Siddharth",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_41",
+                          name: "Sumeet",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              id: "gen3_2",
+              name: "Narayana",
+              generation: 3,
+              years: "",
+              info: { history: "", photos: [] },
+              children: [
+                {
+                  id: "gen4_21",
+                  name: "Ramakrishna",
+                  generation: 4,
+                  years: "",
+                  info: { history: "", photos: [] },
+                  children: [
+                    {
+                      id: "gen5_37",
+                      name: "Narayana-Sushila (D/o Phandije Krishna Bhat Nathu)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: [
+                        {
+                          id: "gen6_45",
+                          name: "Venkatesha-Jyothi (D/o Maala Chandrashekhara Marathe)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: [
+                            {
+                              id: "gen7_24",
+                              name: "Kiran",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            },
+                            {
+                              id: "gen7_25",
+                              name: "Kishore",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            }
+                          ]
+                        },
+                        {
+                          id: "gen6_46",
+                          name: "Vitthala-Vijaya",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: [
+                            {
+                              id: "gen7_26",
+                              name: "Kripa (W/o Nelyadi Mahesh Bhat)",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            },
+                            {
+                              id: "gen7_27",
+                              name: "Giridhar",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      id: "gen5_38",
+                      name: "Dhaakki",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              id: "gen3_3",
+              name: "Rama",
+              generation: 3,
+              years: "",
+              info: { history: "", photos: [] },
+              children: [
+                {
+                  id: "gen4_18",
+                  name: "Hari",
+                  generation: 4,
+                  years: "",
+                  info: { history: "", photos: [] },
+                  children: [
+                    {
+                      id: "gen5_20",
+                      name: "Kamala (W/o Durga Haipaaje Rama Chiplunkar)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    }
+                  ]
+                },
+                {
+                  id: "gen4_19",
+                  name: "Narasimha",
+                  generation: 4,
+                  years: "",
+                  info: { history: "", photos: [] },
+                  children: [
+                    {
+                      id: "gen5_21",
+                      name: "Shambhu",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    },
+                    {
+                      id: "gen5_22",
+                      name: "Mahadeva-Gauri",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: [
+                        {
+                          id: "gen6_1",
+                          name: "Ganesha-Aravindaa (D/o Hallantadka Vaman Marathe)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: [
+                            {
+                              id: "gen7_12",
+                              name: "Akshata",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            },
+                            {
+                              id: "gen7_13",
+                              name: "Chethan",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            }
+                          ]
+                        },
+                        {
+                          id: "gen6_2",
+                          name: "Jagadeesha-Pushpalatha (D/o Kochi Mahadeva Phadke)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: [
+                            {
+                              id: "gen7_14",
+                              name: "Poornima",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            },
+                            {
+                              id: "gen7_15",
+                              name: "Pavan",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            }
+                          ]
+                        },
+                        {
+                          id: "gen6_3",
+                          name: "Gopala-Suphala (D/o Durga Sheshagiri Velankar)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: [
+                            {
+                              id: "gen7_16",
+                              name: "Mahesh",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            },
+                            {
+                              id: "gen7_17",
+                              name: "Meghana",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      id: "gen5_23",
+                      name: "Rama",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    }
+                  ]
+                },
+                {
+                  id: "gen4_20",
+                  name: "Krishna-Sundari",
+                  generation: 4,
+                  years: "",
+                  info: { history: "", photos: [] },
+                  children: []
+                }
+              ]
+            },
+            {
+              id: "gen3_4",
+              name: "Ganesha",
+              generation: 3,
+              years: "",
+              info: { history: "", photos: [] },
+              children: []
+            },
+            {
+              id: "gen3_5",
+              name: "Krishna",
+              generation: 3,
+              years: "",
+              info: { history: "", photos: [] },
+              children: []
+            }
+          ]
+        },
+        {
+          id: "gen2_2",
+          name: "Subraya",
+          generation: 2,
+          years: "",
+          info: { history: "", photos: [] },
+          children: [
+            {
+              id: "gen3_6",
+              name: "Venkatesha-Sundari (D/o Hosmatha ---)",
+              generation: 3,
+              years: "",
+              info: { history: "", photos: [] },
+              children: [
+                {
+                  id: "gen4_1",
+                  name: "Subhadra (W/o Darbhetadka Govinda Abhyankar)",
+                  generation: 4,
+                  years: "",
+                  info: { history: "", photos: [] },
+                  children: []
+                },
+                {
+                  id: "gen4_2",
+                  name: "Yamuna (W/o Mundaje Ranganatha Marathe)",
+                  generation: 4,
+                  years: "",
+                  info: { history: "", photos: [] },
+                  children: []
+                },
+                {
+                  id: "gen4_3",
+                  name: "Subraya-Ratnavathi (D/o Bankodi Krishnabhat)",
+                  generation: 4,
+                  years: "",
+                  info: { history: "", photos: [] },
+                  children: [
+                    {
+                      id: "gen5_39",
+                      name: "Ramesha-Shyamala (D/o Harihara Narayana Limaye)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: [
+                        {
+                          id: "gen6_42",
+                          name: "Jayanth",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_43",
+                          name: "Jayalakshmi",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        }
+                      ]
+                    },
+                    {
+                      id: "gen5_40",
+                      name: "Vasantha-Vasudha (D/o Bengaluru Puttaswamy Mehendale)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: [
+                        {
+                          id: "gen6_44",
+                          name: "Vikas",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        }
+                      ]
+                    },
+                    {
+                      id: "gen5_37b",
+                      name: "Vishalakshi (W/o Hostota Ganapathi Meskar)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    },
+                    {
+                      id: "gen5_41",
+                      name: "Shailaja (W/o Mundaje Ramachandra Phadke)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    },
+                    {
+                      id: "gen5_42",
+                      name: "Taara (W/o Udupi Seetarama Mehendale)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    },
+                    {
+                      id: "gen5_44",
+                      name: "Shantaa (W/o Hubballi Madan Kanitkar)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    }
+                  ]
+                },
+                {
+                  id: "gen4_4",
+                  name: "Rama",
+                  generation: 4,
+                  years: "",
+                  info: { history: "", photos: [] },
+                  children: []
+                },
+                {
+                  id: "gen4_5",
+                  name: "Pillu",
+                  generation: 4,
+                  years: "",
+                  info: { history: "", photos: [] },
+                  children: []
+                }
+              ]
+            },
+            {
+              id: "gen3_7",
+              name: "Vinayaka-Saraswathi (D/o Antara ---)",
+              generation: 3,
+              years: "",
+              info: { history: "", photos: [] },
+              children: [
+                {
+                  id: "gen4_6",
+                  name: "Leela (W/o Durga Padmanabha Marathe)",
+                  generation: 4,
+                  years: "",
+                  info: { history: "", photos: [] },
+                  children: []
+                },
+                {
+                  id: "gen4_7",
+                  name: "Indira (W/o Shirbite Ganapathi Velankar)",
+                  generation: 4,
+                  years: "",
+                  info: { history: "", photos: [] },
+                  children: []
+                },
+                {
+                  id: "gen4_7b",
+                  name: "Kaveri (W/o Phundaje Narayana Marathe)",
+                  generation: 4,
+                  years: "",
+                  info: { history: "", photos: [] },
+                  children: []
+                },
+                {
+                  id: "gen4_8",
+                  name: "Girija (W/o Darbhetadka Khare Anirudha Bhat)",
+                  generation: 4,
+                  years: "",
+                  info: { history: "", photos: [] },
+                  children: []
+                },
+                {
+                  id: "gen4_9",
+                  name: "Ahalya (W/o Durga Balakrishna Marathe)",
+                  generation: 4,
+                  years: "",
+                  info: { history: "", photos: [] },
+                  children: []
+                },
+                {
+                  id: "gen4_10",
+                  name: "Sindhu (W/o Naarkata Narayana Londhe)",
+                  generation: 4,
+                  years: "",
+                  info: { history: "", photos: [] },
+                  children: []
+                },
+                {
+                  id: "gen4_11",
+                  name: "Govinda-Kamala (D/o Mundaje Vitthala Phadke)",
+                  generation: 4,
+                  years: "",
+                  info: { history: "", photos: [] },
+                  children: [
+                    {
+                      id: "gen5_45",
+                      name: "Venkatesha-Padma (D/o Agali Keshava Dathe)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: [
+                        {
+                          id: "gen6_47",
+                          name: "Sunil",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_48",
+                          name: "Rashmi (W/o Mundaje Kishore Patwardhan)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        }
+                      ]
+                    },
+                    {
+                      id: "gen5_46",
+                      name: "Vinayaka",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    },
+                    {
+                      id: "gen5_47",
+                      name: "Bhaskara-Shobhaa (D/o Mundaje Vitthala Rao)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: [
+                        {
+                          id: "gen6_49",
+                          name: "Vasudha",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_50",
+                          name: "Medha",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        }
+                      ]
+                    },
+                    {
+                      id: "gen5_48",
+                      name: "Satyanarayana-Jyothi (D/o Maala Ananda Dongre)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: [
+                        {
+                          id: "gen6_51",
+                          name: "Suprabha",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        }
+                      ]
+                    },
+                    {
+                      id: "gen5_49",
+                      name: "Prabhakara-Pratibha (D/o Agali Keshava Dathe)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    },
+                    {
+                      id: "gen5_50",
+                      name: "Jnanesha",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    },
+                    {
+                      id: "gen5_51",
+                      name: "Shobha",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    },
+                    {
+                      id: "gen5_52",
+                      name: "Vasanti (W/o Mundaje Premananda Phadke)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    },
+                    {
+                      id: "gen5_53",
+                      name: "Gokulaa (W/o Maala Anantha Chiplunkar)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          id: "gen2_3",
+          name: "Ananta",
+          generation: 2,
+          years: "",
+          info: { history: "", photos: [] },
+          children: [
+            {
+              id: "gen3_8",
+              name: "Mahadeva",
+              generation: 3,
+              years: "",
+              info: { history: "", photos: [] },
+              children: [
+                {
+                  id: "gen4_22",
+                  name: "Ananta",
+                  generation: 4,
+                  years: "",
+                  info: { history: "", photos: [] },
+                  children: []
+                },
+                {
+                  id: "gen4_23",
+                  name: "Vishwanatha-Parvathi",
+                  generation: 4,
+                  years: "",
+                  info: { history: "", photos: [] },
+                  children: [
+                    {
+                      id: "gen5_54",
+                      name: "Gopala-Girija (D/o Hostota Keshava Bhide)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: [
+                        {
+                          id: "gen6_51b",
+                          name: "Vishwanatha-Veena (D/o Bengaluru Venkatesha Gore)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: [
+                            {
+                              id: "gen7_28",
+                              name: "Sandeep",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            },
+                            {
+                              id: "gen7_29",
+                              name: "Sachin",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            }
+                          ]
+                        },
+                        {
+                          id: "gen6_52",
+                          name: "Satish-Sudha (D/o Mundaje Padmanabha Gore)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: [
+                            {
+                              id: "gen7_30",
+                              name: "Akhila",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            },
+                            {
+                              id: "gen7_31",
+                              name: "Santhosh",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            }
+                          ]
+                        },
+                        {
+                          id: "gen6_53",
+                          name: "Jagadish-Jyothi (D/o Maala --- Chiplunkar)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: [
+                            {
+                              id: "gen7_32",
+                              name: "Sandesh",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            }
+                          ]
+                        },
+                        {
+                          id: "gen6_54",
+                          name: "Manjula (W/o Maala Shankar Marathe)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_55",
+                          name: "Nagarja-Ravija (D/o Perla Vishnu Bhat)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: [
+                            {
+                              id: "gen7_33",
+                              name: "Sanketh",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            }
+                          ]
+                        },
+                        {
+                          id: "gen6_56",
+                          name: "Ananth-Anitha (Kasargod)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "S/o Vishwanath and his second wife Jalaja", photos: [] },
+                          children: [
+                            {
+                              id: "gen7_34",
+                              name: "Aravind",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            },
+                            {
+                              id: "gen7_35",
+                              name: "Nityanand",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            },
+                            {
+                              id: "gen7_36",
+                              name: "Bhargav",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            },
+                            {
+                              id: "gen7_37",
+                              name: "Chetana",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            }
+                          ]
+                        },
+                        {
+                          id: "gen6_57",
+                          name: "Padmanabha",
+                          generation: 6,
+                          years: "",
+                          info: { history: "S/o Vishwanath and his second wife Jalaja", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_58",
+                          name: "Sumathi (W/o Maala Krishna Marathe)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "D/o Vishwanath and his second wife Jalaja", photos: [] },
+                          children: []
+                        }
+                      ]
+                    },
+                    {
+                      id: "gen5_55",
+                      name: "Vinayaka-Vinoda (D/o Soolabettu Ganapathi Mehendale)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: [
+                        {
+                          id: "gen6_59",
+                          name: "Radhakrishna-Rashmi (D/o Palattamoole Mahadeva Bhat)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: [
+                            {
+                              id: "gen7_42",
+                              name: "Chaitra",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            },
+                            {
+                              id: "gen7_43",
+                              name: "Vinaya",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            },
+                            {
+                              id: "gen7_44",
+                              name: "Srinidhi",
+                              generation: 7,
+                              years: "",
+                              info: { history: "", photos: [] },
+                              children: []
+                            }
+                          ]
+                        },
+                        {
+                          id: "gen6_60",
+                          name: "Prema (W/o Ratnagiri Bhaskar Gogate)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_61",
+                          name: "Shobha (W/o Bengaluru Haridas)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        },
+                        {
+                          id: "gen6_62",
+                          name: "Shashiprabha (W/o Ratnagiri Amar Teredesai)",
+                          generation: 6,
+                          years: "",
+                          info: { history: "", photos: [] },
+                          children: []
+                        }
+                      ]
+                    },
+                    {
+                      id: "gen5_56",
+                      name: "Subhadra (W/o Belthangady Phade Venkatesha Patwardhan)",
+                      generation: 5,
+                      years: "",
+                      info: { history: "", photos: [] },
+                      children: []
+                    }
+                  ]
+                },
+                {
+                  id: "gen4_24",
+                  name: "Ganga",
+                  generation: 4,
+                  years: "",
+                  info: { history: "", photos: [] },
+                  children: []
+                },
+                {
+                  id: "gen4_25",
+                  name: "Tungabhadra",
+                  generation: 4,
+                  years: "",
+                  info: { history: "", photos: [] },
+                  children: []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+
+    /* =======================================================
+       2. MULTI-LINE TEXT SPLITTING HELPER
+       ======================================================= */
+    function formatNameLines(rawName) {
+      if (!rawName) return [""];
+      
+      const parenMatch = rawName.match(/^(.*?)\s*(\(.*?\))\s*$/);
+      let lines = [];
+
+      if (parenMatch) {
+        const primaryPart = parenMatch[1].trim();
+        const parenPart = parenMatch[2].trim();
+
+        if (primaryPart) lines.push({ text: primaryPart, isSub: false });
+        
+        const maxLen = 22;
+        if (parenPart.length <= maxLen) {
+          lines.push({ text: parenPart, isSub: true });
+        } else {
+          const words = parenPart.split(" ");
+          let curLine = "";
+          words.forEach(w => {
+            if ((curLine + " " + w).trim().length <= maxLen) {
+              curLine = (curLine + " " + w).trim();
+            } else {
+              if (curLine) lines.push({ text: curLine, isSub: true });
+              curLine = w;
+            }
+          });
+          if (curLine) lines.push({ text: curLine, isSub: true });
+        }
+      } else {
+        const maxLen = 20;
+        if (rawName.length <= maxLen) {
+          lines.push({ text: rawName, isSub: false });
+        } else {
+          const words = rawName.split(" ");
+          let curLine = "";
+          words.forEach(w => {
+            if ((curLine + " " + w).trim().length <= maxLen) {
+              curLine = (curLine + " " + w).trim();
+            } else {
+              if (curLine) lines.push({ text: curLine, isSub: false });
+              curLine = w;
+            }
+          });
+          if (curLine) lines.push({ text: curLine, isSub: false });
+        }
+      }
+      return lines;
+    }
+
+    function getCleanPersonName(nameStr) {
+      if (!nameStr) return "";
+      const base = nameStr.split("(")[0].trim();
+      return base.split("-")[0].trim();
+    }
+
+    /* =======================================================
+       3. D3 VERTICAL TREE & CONTROLLED ZOOM ENGINE
+       ======================================================= */
+    let root;
+    let selectedNode = null;
+    let navHistory = [];
+    let nodeIdCounter = 0;
+
+    const svg = d3.select("#tree-svg");
+    const container = svg.append("g");
+
+    const zoomBehavior = d3.zoom()
+      .scaleExtent([0.3, 2.5])
+      .on("zoom", (event) => {
+        container.attr("transform", event.transform);
+      });
+
+    svg.call(zoomBehavior);
+
+    const treeLayout = d3.tree().nodeSize([220, 160]);
+
+    function initTree() {
+      root = d3.hierarchy(familyData, d => d.children);
+      
+      root.each(d => {
+        d.uniqueKey = d.data.id || ("node_" + (++nodeIdCounter));
+      });
+
+      // Default View: Show strictly Gen 1 and Gen 2.
+      if (root.children) {
+        root.children.forEach(collapseBranch);
+      }
+
+      navHistory = [root];
+      populateArchive();
+      
+      update(root, false);
+      selectNode(root);
+
+      zoomToFit();
+    }
+
+    function collapseBranch(d) {
+      if (d.children) {
+        d._children = d.children;
+        d._children.forEach(collapseBranch);
+        d.children = null;
+      }
+    }
+
+    function collapseAll(d) {
+      if (d.children) {
+        d.children.forEach(collapseAll);
+        d._children = d.children;
+        d.children = null;
+      } else if (d._children) {
+        d._children.forEach(collapseAll);
+      }
+    }
+
+    function update(source, animate = true) {
+      const duration = animate ? 400 : 0;
+      const treeData = treeLayout(root);
+      const nodes = treeData.descendants();
+      const links = treeData.links();
+
+      nodes.forEach(d => {
+        d.y = d.depth * 150;
+      });
+
+      /* --- RENDER NODES --- */
+      const node = container.selectAll("g.node")
+        .data(nodes, d => d.uniqueKey);
+
+      const nodeEnter = node.enter().append("g")
+        .attr("class", "node")
+        .attr("transform", () => `translate(${source.x0 !== undefined ? source.x0 : source.x},${source.y0 !== undefined ? source.y0 : source.y})`)
+        .on("click", (event, d) => handleNodeClick(event, d));
+
+      nodeEnter.append("circle")
+        .attr("r", 12)
+        .attr("fill", d => d._children ? "#0284c7" : "#0f172a")
+        .attr("stroke", d => d._children ? "#38bdf8" : "#64748b");
+
+      const nameText = nodeEnter.append("text")
+        .attr("class", "node-name");
+
+      nameText.each(function(d) {
+        const lines = formatNameLines(d.data.name);
+        const lineCount = lines.length;
+        const lineHeight = 14;
+        const baseDy = -14 - ((lineCount - 1) * lineHeight);
+
+        const el = d3.select(this);
+        lines.forEach((l, idx) => {
+          el.append("tspan")
+            .attr("x", 0)
+            .attr("dy", idx === 0 ? baseDy : lineHeight)
+            .attr("class", l.isSub ? "sub-relation" : "")
+            .attr("fill", l.isSub ? "#cbd5e1" : "#f8fafc")
+            .text(l.text);
+        });
+      });
+
+      nodeEnter.append("text")
+        .attr("class", "gen-badge")
+        .attr("dy", "26px")
+        .attr("text-anchor", "middle")
+        .text(d => `Gen ${d.data.generation}${d.data.years ? ' • ' + d.data.years : ''}`);
+
+      /* --- UPDATE NODES --- */
+      const nodeUpdate = nodeEnter.merge(node);
+
+      if (duration > 0) {
+        nodeUpdate.transition().duration(duration)
+          .attr("transform", d => `translate(${d.x},${d.y})`);
+      } else {
+        nodeUpdate.attr("transform", d => `translate(${d.x},${d.y})`);
+      }
+
+      nodeUpdate.select("circle")
+        .attr("fill", d => d._children ? "#0284c7" : "#1e293b")
+        .attr("stroke", d => (selectedNode && selectedNode.uniqueKey === d.uniqueKey) ? "#f59e0b" : (d._children ? "#38bdf8" : "#64748b"))
+        .attr("stroke-width", d => (selectedNode && selectedNode.uniqueKey === d.uniqueKey) ? "4px" : "2.5px");
+
+      /* --- REMOVE OLD NODES --- */
+      if (duration > 0) {
+        node.exit().transition().duration(duration)
+          .attr("transform", () => `translate(${source.x},${source.y})`)
+          .remove();
+      } else {
+        node.exit().remove();
+      }
+
+      /* --- VERTICAL LINKS --- */
+      const link = container.selectAll("path.link")
+        .data(links, d => d.target.uniqueKey);
+
+      const linkEnter = link.enter().insert("path", "g")
+        .attr("class", "link")
+        .attr("d", () => {
+          const o = { x: source.x0 !== undefined ? source.x0 : source.x, y: source.y0 !== undefined ? source.y0 : source.y };
+          return verticalDiagonal(o, o);
+        });
+
+      if (duration > 0) {
+        linkEnter.merge(link)
+          .transition().duration(duration)
+          .attr("d", d => verticalDiagonal(d.source, d.target));
+
+        link.exit().transition().duration(duration)
+          .attr("d", () => {
+            const o = { x: source.x, y: source.y };
+            return verticalDiagonal(o, o);
+          })
+          .remove();
+      } else {
+        linkEnter.merge(link).attr("d", d => verticalDiagonal(d.source, d.target));
+        link.exit().remove();
+      }
+
+      nodes.forEach(d => {
+        d.x0 = d.x;
+        d.y0 = d.y;
+      });
+    }
+
+    function verticalDiagonal(s, d) {
+      return `M ${s.x} ${s.y}
+              C ${s.x} ${(s.y + d.y) / 2},
+                ${d.x} ${(s.y + d.y) / 2},
+                ${d.x} ${d.y}`;
+    }
+
+    /* =======================================================
+       4. INTERACTION & CAMERA CENTERING
+       ======================================================= */
+    function handleNodeClick(event, d) {
+      if (event) event.stopPropagation();
+
+      // Collapse siblings so only active branch expands
+      if (d.parent && d.parent.children) {
+        d.parent.children.forEach(sibling => {
+          if (sibling !== d) {
+            collapseAll(sibling);
+          }
+        });
+      }
+
+      if (d.children) {
+        d._children = d.children;
+        d.children = null;
+      } else if (d._children) {
+        d.children = d._children;
+        d._children = null;
+      }
+
+      selectNode(d);
+
+      if (navHistory[navHistory.length - 1] !== d) {
+        navHistory.push(d);
+      }
+
+      update(d, true);
+      centerOnNode(d, Math.min(1.0 + (d.depth * 0.1), 1.25));
+    }
+
+    function centerOnNode(d, scale) {
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+
+      const targetScreenX = width / 2;
+      const targetScreenY = height * 0.28;
+
+      svg.transition().duration(600).call(
+        zoomBehavior.transform,
+        d3.zoomIdentity
+          .translate(targetScreenX, targetScreenY)
+          .scale(scale)
+          .translate(-d.x, -d.y)
+      );
+    }
+
+    /* Frame initial visible nodes securely in viewport */
+    function zoomToFit(animate = false) {
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+
+      const targetTransform = d3.zoomIdentity
+        .translate(width / 2, height * 0.22)
+        .scale(0.92)
+        .translate(-root.x, -root.y);
+
+      if (animate) {
+        svg.transition().duration(600).call(zoomBehavior.transform, targetTransform);
+      } else {
+        svg.call(zoomBehavior.transform, targetTransform);
+      }
+    }
+
+    /* Home: Resets strictly to Gen 1 & Gen 2 */
+    function goHome() {
+      if (root._children) {
+        root.children = root._children;
+        root._children = null;
+      }
+      if (root.children) {
+        root.children.forEach(gen2Child => {
+          if (gen2Child.children || gen2Child._children) {
+            collapseBranch(gen2Child);
+          }
+        });
+      }
+
+      navHistory = [root];
+      selectNode(root);
+      update(root, true);
+      zoomToFit(true);
+    }
+
+    /* Back: Steps one level back up */
+    function goBack() {
+      if (navHistory.length > 1) {
+        const currentNode = navHistory.pop();
+        collapseAll(currentNode);
+
+        const previousNode = navHistory[navHistory.length - 1];
+        selectNode(previousNode);
+        update(previousNode, true);
+        centerOnNode(previousNode, Math.min(1.0 + (previousNode.depth * 0.1), 1.25));
+      } else {
+        goHome();
+      }
+    }
+
+    document.getElementById("btnHome").addEventListener("click", goHome);
+    document.getElementById("btnBack").addEventListener("click", goBack);
+
+    /* =======================================================
+       5. SEARCH ENGINE (Expand to found node + Father filter)
+       ======================================================= */
+    function getAllNodesFlat(node, parent = null) {
+      let list = [];
+      list.push({ node: node, parent: parent });
+      
+      const children = (node.children || []).concat(node._children || []);
+      children.forEach(c => {
+        list = list.concat(getAllNodesFlat(c, node));
+      });
+      return list;
+    }
+
+    function searchTree(nameQuery, fatherQuery) {
+      nameQuery = (nameQuery || "").trim().toLowerCase();
+      fatherQuery = (fatherQuery || "").trim().toLowerCase();
+      if (!nameQuery) return [];
+
+      const all = getAllNodesFlat(root, null);
+
+      return all.filter(entry => {
+        const memberName = (entry.node.data.name || "").toLowerCase();
+        const matchesName = memberName.includes(nameQuery);
+        if (!matchesName) return false;
+
+        if (fatherQuery) {
+          if (!entry.parent) return false;
+          const fatherName = (entry.parent.data.name || "").toLowerCase();
+          return fatherName.includes(fatherQuery);
+        }
+        return true;
+      });
+    }
+
+    function expandAndFocusNode(targetNode) {
+      const path = [];
+      let cur = targetNode;
+      while (cur) {
+        path.unshift(cur);
+        cur = cur.parent;
+      }
+
+      collapseAll(root);
+
+      for (let i = 0; i < path.length - 1; i++) {
+        const anc = path[i];
+        if (anc._children) {
+          anc.children = anc._children;
+          anc._children = null;
+        }
+      }
+
+      update(root, true);
+
+      navHistory = path.slice();
+      selectNode(targetNode);
+      update(targetNode, true);
+      centerOnNode(targetNode, Math.min(1.1 + (targetNode.depth * 0.1), 1.35));
+
+      document.getElementById("searchDropdown").classList.remove("open");
+    }
+
+    const searchInput = document.getElementById("searchInput");
+    const fatherInput = document.getElementById("fatherInput");
+    const searchDropdown = document.getElementById("searchDropdown");
+    const searchSubmitBtn = document.getElementById("searchSubmitBtn");
+
+    function renderSearchResults() {
+      const nameVal = searchInput.value;
+      const fatherVal = fatherInput.value;
+      const matches = searchTree(nameVal, fatherVal);
+
+      searchDropdown.innerHTML = "";
+      if (matches.length === 0) {
+        if (nameVal.trim().length > 0) {
+          searchDropdown.innerHTML = `<div style="padding: 10px; font-size: 12px; color: #94a3b8; text-align: center;">No member found matching "${nameVal}"</div>`;
+          searchDropdown.classList.add("open");
+        } else {
+          searchDropdown.classList.remove("open");
+        }
+        return;
+      }
+
+      matches.forEach(item => {
+        const div = document.createElement("div");
+        div.className = "search-item";
+        const fatherText = item.parent ? getCleanPersonName(item.parent.data.name) : "None (Patriarch)";
+        div.innerHTML = `
+          <div class="search-item-name">${item.node.data.name}</div>
+          <div class="search-item-meta">Gen ${item.node.data.generation} • Father: ${fatherText}</div>
+        `;
+        div.addEventListener("click", () => {
+          expandAndFocusNode(item.node);
+        });
+        searchDropdown.appendChild(div);
+      });
+
+      searchDropdown.classList.add("open");
+    }
+
+    searchInput.addEventListener("input", renderSearchResults);
+    fatherInput.addEventListener("input", renderSearchResults);
+
+    function executeDirectSearch() {
+      const matches = searchTree(searchInput.value, fatherInput.value);
+      if (matches.length > 0) {
+        expandAndFocusNode(matches[0].node);
+      } else {
+        renderSearchResults();
+      }
+    }
+
+    searchSubmitBtn.addEventListener("click", executeDirectSearch);
+    searchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") executeDirectSearch();
+    });
+    fatherInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") executeDirectSearch();
+    });
+
+    document.addEventListener("click", (e) => {
+      const container = document.getElementById("searchBoxContainer");
+      if (!container.contains(e.target)) {
+        searchDropdown.classList.remove("open");
+      }
+    });
+
+    /* =======================================================
+       6. DRAWER, LIGHTBOX & TAB MANAGEMENT
+       ======================================================= */
+    let currentPhotoScale = 1;
+
+    function openDrawer() {
+      document.getElementById("sideDrawer").classList.add("open");
+    }
+    function closeDrawer() {
+      document.getElementById("sideDrawer").classList.remove("open");
+    }
+
+    function showTab(tabId) {
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+      document.querySelectorAll(".tab-body").forEach(p => p.classList.remove("active"));
+      document.getElementById(tabId).classList.add("active");
+      event.target.classList.add("active");
+    }
+
+    /* Lightbox Functions with Click-to-Zoom & Button Controls */
+    function openLightbox(src) {
+      const modal = document.getElementById("lightboxModal");
+      const img = document.getElementById("lightboxImg");
+      img.src = src;
+      currentPhotoScale = 1;
+      img.style.transform = `scale(${currentPhotoScale})`;
+      img.classList.remove("zoomed");
+      modal.classList.add("open");
+    }
+
+    function closeLightbox() {
+      const modal = document.getElementById("lightboxModal");
+      const img = document.getElementById("lightboxImg");
+      currentPhotoScale = 1;
+      img.style.transform = `scale(1)`;
+      img.classList.remove("zoomed");
+      modal.classList.remove("open");
+    }
+
+    function togglePhotoZoom() {
+      const img = document.getElementById("lightboxImg");
+      if (currentPhotoScale === 1) {
+        currentPhotoScale = 2.0;
+        img.classList.add("zoomed");
+      } else {
+        currentPhotoScale = 1;
+        img.classList.remove("zoomed");
+      }
+      img.style.transform = `scale(${currentPhotoScale})`;
+    }
+
+    function zoomInPhoto() {
+      const img = document.getElementById("lightboxImg");
+      currentPhotoScale = Math.min(currentPhotoScale + 0.5, 3.5);
+      img.style.transform = `scale(${currentPhotoScale})`;
+      if (currentPhotoScale > 1) img.classList.add("zoomed");
+    }
+
+    function zoomOutPhoto() {
+      const img = document.getElementById("lightboxImg");
+      currentPhotoScale = Math.max(currentPhotoScale - 0.5, 1);
+      img.style.transform = `scale(${currentPhotoScale})`;
+      if (currentPhotoScale === 1) img.classList.remove("zoomed");
+    }
+
+    function resetPhotoZoom() {
+      const img = document.getElementById("lightboxImg");
+      currentPhotoScale = 1;
+      img.style.transform = `scale(1)`;
+      img.classList.remove("zoomed");
+    }
+
+    function populateArchive() {
+      const archiveBox = document.getElementById("archivePhotoList");
+      archiveBox.innerHTML = "";
+      familyArchivePhotos.forEach(item => {
+        const card = document.createElement("div");
+        card.className = "photo-card";
+        card.innerHTML = `
+          <img src="${item.url}" alt="${item.caption}" onclick="openLightbox('${item.url}')" title="Tap to view full image">
+          <div class="photo-caption">${item.caption}</div>
+        `;
+        archiveBox.appendChild(card);
+      });
+    }
+
+    function selectNode(d) {
+      selectedNode = d;
+      update(d, false);
+
+      document.getElementById("infoMemberName").innerText = d.data.name;
+      document.getElementById("infoGen").innerText = `Generation ${d.data.generation}`;
+      document.getElementById("infoYears").innerText = d.data.years || "Not specified";
+      document.getElementById("infoHistory").innerText = d.data.info?.history || "No biographical records logged.";
+
+      const memberPhotoBox = document.getElementById("memberPhotoList");
+      const noPhotosMsg = document.getElementById("noMemberPhotosMsg");
+      memberPhotoBox.innerHTML = "";
+      
+      const photos = d.data.info?.photos || [];
+      if (photos.length > 0) {
+        noPhotosMsg.style.display = "none";
+        photos.forEach(src => {
+          const card = document.createElement("div");
+          card.className = "photo-card";
+          card.innerHTML = `<img src="${src}" alt="${d.data.name}" onclick="openLightbox('${src}')" title="Tap to view full image">`;
+          memberPhotoBox.appendChild(card);
+        });
+      } else {
+        noPhotosMsg.style.display = "block";
+      }
+    }
+
+    window.addEventListener("resize", () => {
+      if (selectedNode) {
+        centerOnNode(selectedNode, 1.0);
+      }
+    });
+
+    // Start application
+    initTree();
+  </script>
+</body>
+</html>
